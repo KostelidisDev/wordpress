@@ -1,0 +1,185 @@
+name: ${SITE_NAME:-wordpress}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+    compress: "true"
+
+services:
+  wordpress:
+    # WordPress core lives in the volume and updates itself from wp-admin, so this
+    # tag only controls PHP and Apache. Pin the exact tag from Docker Hub.
+    image: wordpress:${WORDPRESS_VERSION:-php8.5-apache}
+    container_name: ${SITE_NAME:-wordpress}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TZ: "${TZ:-Europe/Athens}"
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: "${DB_NAME:-wordpress}"
+      WORDPRESS_DB_USER: "${DB_USER:-wordpress}"
+      WORDPRESS_DB_PASSWORD_FILE: /run/secrets/db-password
+      WORDPRESS_TABLE_PREFIX: "${WORDPRESS_TABLE_PREFIX:-wp_}"
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_HOME', 'https://${DOMAIN:?DOMAIN is required}');
+        define('WP_SITEURL', 'https://${DOMAIN:?DOMAIN is required}');
+        define('DISALLOW_FILE_EDIT', true);
+        define('WP_MEMORY_LIMIT', '${WORDPRESS_PHP_MEMORY_LIMIT:-256M}');
+    secrets:
+      - db-password
+    volumes:
+      - wordpress:/var/www/html
+    configs:
+      - source: php-uploads
+        target: /usr/local/etc/php/conf.d/uploads.ini
+      - source: apache-remoteip
+        target: /etc/apache2/conf-enabled/remoteip.conf
+      - source: apache-mpm
+        target: /etc/apache2/mods-available/mpm_prefork.conf
+    networks:
+      - wordpress
+      - wordpress-db
+    healthcheck:
+      # Static file: checks Apache/PHP container is up without depending on DB state
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost/wp-includes/images/blank.gif"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 5s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          # Must cover MaxRequestWorkers x per-request PHP memory (see apache-mpm).
+          # noinspection ComposeUnknownValues
+          cpus: "${WORDPRESS_CPU_LIMIT:-2}"
+          # noinspection ComposeUnknownValues
+          memory: "${WORDPRESS_MEMORY_LIMIT:-1G}"
+          # noinspection ComposeUnknownValues
+          pids: ${WORDPRESS_PIDS_LIMIT:-256}
+        reservations:
+          # noinspection ComposeUnknownValues
+          memory: "${WORDPRESS_MEMORY_RESERVATION:-256M}"
+    labels:
+      - "traefik.enable=true"
+      # Router (TLS comes from the websecure entrypoint's wildcard default)
+      - "traefik.http.routers.${SITE_NAME:-wordpress}.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.${SITE_NAME:-wordpress}.entrypoints=websecure"
+      - "traefik.http.routers.${SITE_NAME:-wordpress}.service=${SITE_NAME:-wordpress}"
+      - "traefik.http.routers.${SITE_NAME:-wordpress}.middlewares=${SITE_NAME:-wordpress}-ipallowlist,${SITE_NAME:-wordpress}-headers,strict-path@docker"
+      # Middlewares
+      - "traefik.http.middlewares.${SITE_NAME:-wordpress}-ipallowlist.ipallowlist.sourcerange=${IPV4_ALLOWLIST:-0.0.0.0/0},${IPV6_ALLOWLIST:-::/0}"
+      - "traefik.http.middlewares.${SITE_NAME:-wordpress}-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.${SITE_NAME:-wordpress}-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.${SITE_NAME:-wordpress}-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.${SITE_NAME:-wordpress}-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.${SITE_NAME:-wordpress}-headers.headers.customFrameOptionsValue=SAMEORIGIN"
+      # Service
+      - "traefik.http.services.${SITE_NAME:-wordpress}.loadbalancer.server.port=80"
+
+  db:
+    # Pin the exact series (e.g. 11.8). With "lts" plus MARIADB_AUTO_UPGRADE, the
+    # next LTS release would upgrade your data files on restart, with no way back.
+    image: mariadb:${MARIADB_VERSION:-lts}
+    container_name: ${SITE_NAME:-wordpress}-db
+    restart: unless-stopped
+    stop_grace_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TZ: "${TZ:-Europe/Athens}"
+      MARIADB_DATABASE: "${DB_NAME:-wordpress}"
+      MARIADB_USER: "${DB_USER:-wordpress}"
+      MARIADB_PASSWORD_FILE: /run/secrets/db-password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db-root-password
+      MARIADB_AUTO_UPGRADE: "1"
+    secrets:
+      - db-password
+      - db-root-password
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=${DB_INNODB_BUFFER_POOL_SIZE:-128M}
+    volumes:
+      - db:/var/lib/mysql
+    networks:
+      - wordpress-db
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 5s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          # noinspection ComposeUnknownValues
+          cpus: "${DB_CPU_LIMIT:-1}"
+          # noinspection ComposeUnknownValues
+          memory: "${DB_MEMORY_LIMIT:-512M}"
+          # noinspection ComposeUnknownValues
+          pids: ${DB_PIDS_LIMIT:-256}
+        reservations:
+          # noinspection ComposeUnknownValues
+          memory: "${DB_MEMORY_RESERVATION:-256M}"
+
+configs:
+  php-uploads:
+    content: |
+      file_uploads = On
+      upload_max_filesize = ${PHP_UPLOAD_MAX_FILESIZE:-64M}
+      post_max_size = ${PHP_UPLOAD_MAX_FILESIZE:-64M}
+      memory_limit = ${WORDPRESS_PHP_MEMORY_LIMIT:-256M}
+      max_execution_time = 300
+      expose_php = Off
+  # Show WordPress the real visitor IP instead of the Docker gateway Traefik
+  # connects from — needed for login limiting, comment spam checks and logs.
+  apache-remoteip:
+    content: |
+      LoadModule remoteip_module /usr/lib/apache2/modules/mod_remoteip.so
+      RemoteIPHeader X-Forwarded-For
+      RemoteIPInternalProxy ${WORDPRESS_TRUSTED_PROXIES:-172.16.0.0/12}
+      ServerTokens Prod
+      ServerSignature Off
+  # Cap Apache workers so peak memory (workers x PHP memory) fits the container
+  # limit. Apache's default of 150 workers would blow past it under load.
+  apache-mpm:
+    content: |
+      <IfModule mpm_prefork_module>
+        StartServers 2
+        MinSpareServers 2
+        MaxSpareServers 5
+        MaxRequestWorkers ${WORDPRESS_MAX_WORKERS:-12}
+        MaxConnectionsPerChild 1000
+      </IfModule>
+
+networks:
+  # Per-site names: with fixed names, a second site would join the same networks
+  # and its "db" alias would collide with this one's.
+  wordpress:
+    name: ${SITE_NAME:-wordpress}
+  wordpress-db:
+    name: ${SITE_NAME:-wordpress}-db
+    internal: true
+
+volumes:
+  wordpress:
+    name: ${SITE_NAME:-wordpress}-wordpress
+  db:
+    name: ${SITE_NAME:-wordpress}-db
+
+secrets:
+  db-password:
+    environment: DB_PASSWORD
+  db-root-password:
+    environment: DB_ROOT_PASSWORD
