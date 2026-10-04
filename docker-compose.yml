@@ -74,7 +74,7 @@ services:
       - "traefik.http.routers.${SITE_NAME:-wordpress}.rule=Host(`${DOMAIN}`)"
       - "traefik.http.routers.${SITE_NAME:-wordpress}.entrypoints=websecure"
       - "traefik.http.routers.${SITE_NAME:-wordpress}.service=${SITE_NAME:-wordpress}"
-      - "traefik.http.routers.${SITE_NAME:-wordpress}.middlewares=${SITE_NAME:-wordpress}-ipallowlist,${SITE_NAME:-wordpress}-headers,strict-path@docker"
+      - "traefik.http.routers.${SITE_NAME:-wordpress}.middlewares=${SITE_NAME:-wordpress}-ipallowlist,${SITE_NAME:-wordpress}-headers,strict-path@file"
       # Middlewares
       - "traefik.http.middlewares.${SITE_NAME:-wordpress}-ipallowlist.ipallowlist.sourcerange=${IPV4_ALLOWLIST:-0.0.0.0/0},${IPV6_ALLOWLIST:-::/0}"
       - "traefik.http.middlewares.${SITE_NAME:-wordpress}-headers.headers.stsSeconds=31536000"
