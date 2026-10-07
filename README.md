@@ -36,6 +36,10 @@ Edit `.env` and set at least:
 | `DB_ROOT_PASSWORD` | MariaDB root password; only used when the database is first created |
 | `WORDPRESS_VERSION`| Pin an exact tag from Docker Hub                                   |
 | `MARIADB_VERSION`  | Pin a series such as `11.8`, never `lts` (see below)               |
+| `WORDPRESS_NETWORK_SUBNET_V4` | IPv4 subnet of the frontend network, e.g. `10.100.0.0/24` |
+| `WORDPRESS_NETWORK_SUBNET_V6` | IPv6 subnet of the frontend network, e.g. `fd00:100::/64` |
+| `WORDPRESS_DB_NETWORK_SUBNET_V4` | IPv4 subnet of the database network, e.g. `10.101.0.0/24` |
+| `WORDPRESS_DB_NETWORK_SUBNET_V6` | IPv6 subnet of the database network, e.g. `fd00:101::/64` |
 
 Then start the stack:
 
@@ -51,7 +55,8 @@ Open `https://$DOMAIN` to finish the WordPress install.
 All settings live in `.env`. See `.env.example` for the full list with comments. The main groups are:
 
 - **Access control**: `IPV4_ALLOWLIST` and `IPV6_ALLOWLIST` (comma-separated CIDRs). The defaults allow everyone.
-- **PHP / Apache**: `PHP_UPLOAD_MAX_FILESIZE`, `WORDPRESS_PHP_MEMORY_LIMIT`, `WORDPRESS_MAX_WORKERS`, `WORDPRESS_TRUSTED_PROXIES`.
+- **PHP / Apache**: `PHP_UPLOAD_MAX_FILESIZE`, `WORDPRESS_PHP_MEMORY_LIMIT`, `WORDPRESS_MAX_WORKERS`.
+- **Networking**: `WORDPRESS_NETWORK_SUBNET_V4`/`_V6` (frontend) and `WORDPRESS_DB_NETWORK_SUBNET_V4`/`_V6` (database). Apache trusts forwarded client IPs only from the frontend subnets.
 - **Resources**: CPU, memory and PID limits for each service, plus `DB_INNODB_BUFFER_POOL_SIZE`.
 
 ### Memory sizing
@@ -72,14 +77,16 @@ Peak WordPress memory is roughly `WORDPRESS_MAX_WORKERS × per-request memory`. 
 
 The stack creates two networks named after `SITE_NAME`:
 
-- `$SITE_NAME`: the frontend network. Traefik must be attached to it.
-- `$SITE_NAME-db`: internal, shared only by WordPress and MariaDB.
+- `$SITE_NAME`: the frontend network, dual-stack (IPv4 + IPv6) on `WORDPRESS_NETWORK_SUBNET_V4` and `WORDPRESS_NETWORK_SUBNET_V6`. Traefik must be attached to it. Each site needs its own non-overlapping subnets.
+- `$SITE_NAME-db`: internal, shared only by WordPress and MariaDB; dual-stack on `WORDPRESS_DB_NETWORK_SUBNET_V4` and `WORDPRESS_DB_NETWORK_SUBNET_V6`.
 
 If Traefik isn't already on the frontend network, connect it once the stack has started:
 
 ```sh
 docker network connect "$SITE_NAME" traefik
 ```
+
+Docker can't change the subnets of an existing network. After changing them, recreate the networks with `docker compose down && docker compose up -d` (volumes are kept), then reconnect Traefik.
 
 ## Running multiple sites
 

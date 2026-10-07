@@ -148,7 +148,7 @@ configs:
     content: |
       LoadModule remoteip_module /usr/lib/apache2/modules/mod_remoteip.so
       RemoteIPHeader X-Forwarded-For
-      RemoteIPInternalProxy ${WORDPRESS_TRUSTED_PROXIES:-172.16.0.0/12}
+      RemoteIPInternalProxy ${WORDPRESS_NETWORK_SUBNET_V4:-10.100.0.0/24} ${WORDPRESS_NETWORK_SUBNET_V6:-fd00:100::/64}
       ServerTokens Prod
       ServerSignature Off
   # Cap Apache workers so peak memory (workers x PHP memory) fits the container
@@ -166,11 +166,22 @@ configs:
 networks:
   # Per-site names: with fixed names, a second site would join the same networks
   # and its "db" alias would collide with this one's.
+  # Fixed subnets so the trusted proxy range is exact; give each site its own.
   wordpress:
     name: ${SITE_NAME:-wordpress}
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: ${WORDPRESS_NETWORK_SUBNET_V4:-10.100.0.0/24}
+        - subnet: ${WORDPRESS_NETWORK_SUBNET_V6:-fd00:100::/64}
   wordpress-db:
     name: ${SITE_NAME:-wordpress}-db
     internal: true
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: ${WORDPRESS_DB_NETWORK_SUBNET_V4:-10.101.0.0/24}
+        - subnet: ${WORDPRESS_DB_NETWORK_SUBNET_V6:-fd00:101::/64}
 
 volumes:
   wordpress:
