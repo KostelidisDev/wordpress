@@ -43,6 +43,8 @@ services:
         target: /etc/apache2/conf-enabled/remoteip.conf
       - source: apache-mpm
         target: /etc/apache2/mods-available/mpm_prefork.conf
+      - source: apache-cache
+        target: /etc/apache2/conf-enabled/cache.conf
     networks:
       - wordpress
       - wordpress-db
@@ -75,6 +77,11 @@ services:
       - "traefik.http.routers.${SITE_NAME:-wordpress}.entrypoints=websecure"
       - "traefik.http.routers.${SITE_NAME:-wordpress}.service=${SITE_NAME:-wordpress}"
       - "traefik.http.routers.${SITE_NAME:-wordpress}.middlewares=${SITE_NAME:-wordpress}-ipallowlist,${SITE_NAME:-wordpress}-headers,strict-path@file"
+      # Static assets get a long browser cache; its longer rule outranks the router above
+      - "traefik.http.routers.${SITE_NAME:-wordpress}-static.rule=Host(`${DOMAIN}`) && PathRegexp(`\\.(css|js|mjs|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot|mp4|webm)$$`)"
+      - "traefik.http.routers.${SITE_NAME:-wordpress}-static.entrypoints=websecure"
+      - "traefik.http.routers.${SITE_NAME:-wordpress}-static.service=${SITE_NAME:-wordpress}"
+      - "traefik.http.routers.${SITE_NAME:-wordpress}-static.middlewares=${SITE_NAME:-wordpress}-ipallowlist,${SITE_NAME:-wordpress}-headers,${SITE_NAME:-wordpress}-static-cache,strict-path@file"
       # Middlewares
       - "traefik.http.middlewares.${SITE_NAME:-wordpress}-ipallowlist.ipallowlist.sourcerange=${IPV4_ALLOWLIST:-0.0.0.0/0},${IPV6_ALLOWLIST:-::/0}"
       - "traefik.http.middlewares.${SITE_NAME:-wordpress}-headers.headers.stsSeconds=31536000"
@@ -82,6 +89,7 @@ services:
       - "traefik.http.middlewares.${SITE_NAME:-wordpress}-headers.headers.contentTypeNosniff=true"
       - "traefik.http.middlewares.${SITE_NAME:-wordpress}-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
       - "traefik.http.middlewares.${SITE_NAME:-wordpress}-headers.headers.customFrameOptionsValue=SAMEORIGIN"
+      - "traefik.http.middlewares.${SITE_NAME:-wordpress}-static-cache.headers.customResponseHeaders.Cache-Control=public, max-age=${STATIC_CACHE_MAX_AGE:-31536000}"
       # Service
       - "traefik.http.services.${SITE_NAME:-wordpress}.loadbalancer.server.port=80"
 
@@ -155,6 +163,13 @@ configs:
       RemoteIPInternalProxy ${WORDPRESS_NETWORK_SUBNET_V4:-10.100.0.0/24} ${WORDPRESS_NETWORK_SUBNET_V6:-fd00:100::/64}
       ServerTokens Prod
       ServerSignature Off
+  # Browser cache for anonymous HTML pages. HTML can't be done in Traefik: it would
+  # overwrite the no-cache headers WordPress sends for wp-admin and logged-in users,
+  # whereas mod_expires leaves any response that already has an Expires header alone.
+  apache-cache:
+    content: |
+      ExpiresActive On
+      ExpiresByType text/html "access plus ${HTML_CACHE_MAX_AGE:-300} seconds"
   # Cap Apache workers so peak memory (workers x PHP memory) fits the container
   # limit. Apache's default of 150 workers would blow past it under load.
   apache-mpm:
