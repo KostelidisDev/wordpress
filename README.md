@@ -6,6 +6,7 @@ Docker Compose stack for one WordPress site (Apache + PHP) backed by MariaDB, se
 
 - **wordpress**: official `wordpress:*-apache` image. WordPress core lives in a volume and updates itself from wp-admin; the image tag only controls PHP and Apache.
 - **db**: MariaDB on an internal network that has no outside access.
+- **redis**: in-memory object cache on the same internal network, used by the Redis Object Cache plugin.
 - Database passwords are passed as Docker secrets, not as plain environment variables.
 - Apache sees the real visitor IP (`mod_remoteip`), the worker count is capped to fit the memory limit, and server tokens are hidden.
 - Traefik labels add routing, an IP allowlist and security headers (HSTS, nosniff, referrer policy, frame options).
@@ -45,7 +46,7 @@ Then start the stack:
 
 ```sh
 docker compose up -d
-docker compose ps   # both services should become healthy
+docker compose ps   # all services should become healthy
 ```
 
 Open `https://$DOMAIN` to finish the WordPress install.
@@ -57,7 +58,11 @@ All settings live in `.env`. See `.env.example` for the full list with comments.
 - **Access control**: `IPV4_ALLOWLIST` and `IPV6_ALLOWLIST` (comma-separated CIDRs). The defaults allow everyone.
 - **PHP / Apache**: `PHP_UPLOAD_MAX_FILESIZE`, `WORDPRESS_PHP_MEMORY_LIMIT`, `WORDPRESS_MAX_WORKERS`.
 - **Networking**: `WORDPRESS_NETWORK_SUBNET_V4`/`_V6` (frontend) and `WORDPRESS_DB_NETWORK_SUBNET_V4`/`_V6` (database). Apache trusts forwarded client IPs only from the frontend subnets.
-- **Resources**: CPU, memory and PID limits for each service, plus `DB_INNODB_BUFFER_POOL_SIZE`.
+- **Resources**: CPU, memory and PID limits for each service, plus `DB_INNODB_BUFFER_POOL_SIZE` and `REDIS_MAXMEMORY`.
+
+### Object cache
+
+WordPress is already configured to reach Redis (`WP_REDIS_HOST`). To turn the cache on, install the **Redis Object Cache** plugin in wp-admin and click **Enable Object Cache** under Settings → Redis. Redis keeps nothing on disk, so restarting it just empties the cache.
 
 ### Memory sizing
 
@@ -71,14 +76,14 @@ Peak WordPress memory is roughly `WORDPRESS_MAX_WORKERS × per-request memory`. 
 
 - `DISALLOW_FILE_EDIT` turns off the theme and plugin file editor in wp-admin.
 - `WP_HOME` and `WP_SITEURL` are fixed to `https://$DOMAIN`.
-- Both containers run with `no-new-privileges`.
+- All containers run with `no-new-privileges`.
 
 ## Traefik networking
 
 The stack creates two networks named after `SITE_NAME`:
 
 - `$SITE_NAME`: the frontend network, dual-stack (IPv4 + IPv6) on `WORDPRESS_NETWORK_SUBNET_V4` and `WORDPRESS_NETWORK_SUBNET_V6`. Traefik must be attached to it. Each site needs its own non-overlapping subnets.
-- `$SITE_NAME-db`: internal, shared only by WordPress and MariaDB; dual-stack on `WORDPRESS_DB_NETWORK_SUBNET_V4` and `WORDPRESS_DB_NETWORK_SUBNET_V6`.
+- `$SITE_NAME-db`: internal, shared only by WordPress, MariaDB and Redis; dual-stack on `WORDPRESS_DB_NETWORK_SUBNET_V4` and `WORDPRESS_DB_NETWORK_SUBNET_V6`.
 
 If Traefik isn't already on the frontend network, connect it once the stack has started:
 

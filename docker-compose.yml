@@ -20,6 +20,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       TZ: "${TZ:-Europe/Athens}"
       WORDPRESS_DB_HOST: db:3306
@@ -32,6 +34,10 @@ services:
         define('WP_SITEURL', 'https://${DOMAIN:?DOMAIN is required}');
         define('DISALLOW_FILE_EDIT', true);
         define('WP_MEMORY_LIMIT', '${WORDPRESS_PHP_MEMORY_LIMIT:-256M}');
+        define('WP_REDIS_HOST', 'redis');
+        define('WP_REDIS_PORT', 6379);
+        define('WP_REDIS_TIMEOUT', 1);
+        define('WP_REDIS_READ_TIMEOUT', 1);
     secrets:
       - db-password
     volumes:
@@ -140,6 +146,47 @@ services:
         reservations:
           # noinspection ComposeUnknownValues
           memory: "${DB_MEMORY_RESERVATION:-256M}"
+
+  redis:
+    # Object cache for the Redis Object Cache plugin. Pure cache: no persistence,
+    # so it needs no volume and evicts the least recently used keys when full.
+    image: redis:${REDIS_VERSION:-8-alpine}
+    container_name: ${SITE_NAME:-wordpress}-redis
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TZ: "${TZ:-Europe/Athens}"
+    command:
+      - redis-server
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-64mb}
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    networks:
+      - wordpress-db
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      start_interval: 2s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          # Leave headroom above REDIS_MAXMEMORY for Redis's own overhead.
+          # noinspection ComposeUnknownValues
+          cpus: "${REDIS_CPU_LIMIT:-0.5}"
+          # noinspection ComposeUnknownValues
+          memory: "${REDIS_MEMORY_LIMIT:-128M}"
+          # noinspection ComposeUnknownValues
+          pids: ${REDIS_PIDS_LIMIT:-64}
 
 configs:
   php-uploads:
