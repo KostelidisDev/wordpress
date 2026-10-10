@@ -169,7 +169,7 @@ networks:
   # Fixed subnets so the trusted proxy range is exact; give each site its own.
   wordpress:
     name: ${SITE_NAME:-wordpress}
-    enable_ipv6: true
+    enable_ipv6: ${ENABLE_IPV6:-true}
     ipam:
       config:
         - subnet: ${WORDPRESS_NETWORK_SUBNET_V4:-10.100.0.0/24}
@@ -177,7 +177,7 @@ networks:
   wordpress-db:
     name: ${SITE_NAME:-wordpress}-db
     internal: true
-    enable_ipv6: true
+    enable_ipv6: ${ENABLE_IPV6:-true}
     ipam:
       config:
         - subnet: ${WORDPRESS_DB_NETWORK_SUBNET_V4:-10.101.0.0/24}
