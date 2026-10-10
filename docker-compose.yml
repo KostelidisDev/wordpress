@@ -142,6 +142,11 @@ configs:
       memory_limit = ${WORDPRESS_PHP_MEMORY_LIMIT:-256M}
       max_execution_time = 300
       expose_php = Off
+      output_buffering = 4096
+      display_errors = Off
+      display_startup_errors = Off
+      log_errors = On
+      error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
   # Show WordPress the real visitor IP instead of the Docker gateway Traefik
   # connects from — needed for login limiting, comment spam checks and logs.
   apache-remoteip:
