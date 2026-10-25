@@ -102,7 +102,7 @@ services:
   db:
     # Pin the exact series (e.g. 11.8). With "lts" plus MARIADB_AUTO_UPGRADE, the
     # next LTS release would upgrade your data files on restart, with no way back.
-    image: mariadb:${MARIADB_VERSION:-lts}
+    image: mariadb:${MARIADB_VERSION:-12.3.3-noble}
     container_name: ${SITE_NAME:-wordpress}-db
     restart: unless-stopped
     stop_grace_period: 60s
@@ -150,7 +150,7 @@ services:
   redis:
     # Object cache for the Redis Object Cache plugin. Pure cache: no persistence,
     # so it needs no volume and evicts the least recently used keys when full.
-    image: redis:${REDIS_VERSION:-8-alpine}
+    image: redis:${REDIS_VERSION:-8.10.2-alpine3.23}
     container_name: ${SITE_NAME:-wordpress}-redis
     restart: unless-stopped
     security_opt:
