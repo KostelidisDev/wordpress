@@ -1,0 +1,10 @@
+services:
+  wordpress:
+    healthcheck:
+      start_interval: !reset null
+  db:
+    healthcheck:
+      start_interval: !reset null
+  redis:
+    healthcheck:
+      start_interval: !reset null
