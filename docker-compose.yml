@@ -150,7 +150,7 @@ services:
   redis:
     # Object cache for the Redis Object Cache plugin. Pure cache: no persistence,
     # so it needs no volume and evicts the least recently used keys when full.
-    image: redis:8.10.2-alpine3.23
+    image: redis:8.10.3-alpine3.23
     container_name: ${SITE_NAME:-wordpress}-redis
     restart: unless-stopped
     security_opt:
